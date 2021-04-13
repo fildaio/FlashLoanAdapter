@@ -1,0 +1,26 @@
+{
+  "name": "flashloanrepayment",
+  "version": "1.0.0",
+  "description": "repay loan by flashloan",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zuohuahua/FlashLoanRepayment.git"
+  },
+  "keywords": [
+    "repay",
+    "flashloan"
+  ],
+  "author": "Aria",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zuohuahua/FlashLoanRepayment/issues"
+  },
+  "homepage": "https://github.com/zuohuahua/FlashLoanRepayment#readme"
+}

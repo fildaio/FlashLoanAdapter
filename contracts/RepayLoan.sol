@@ -1,5 +1,5 @@
 
-// SPDX-License-Identifier: agpl-3.0
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.5.0;
 
 import "./flashloan/FlashLoanReceiverBase.sol";
@@ -23,19 +23,10 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
     );
 
     struct FTokenParams {
-        address[] ftokens;
-        uint256 amount;
+        address debtFToken;
+        address collateralFToken;
+        uint256 collateralFTokenAmount;
         address[] swapRoute;
-    }
-
-    struct RepayLocalVars {
-        address asset;
-        uint256 amount;
-        uint256 premium;
-        uint256 borrowAmount;
-        address ftoken;
-        uint256 ftokenAmount;
-        uint256 backFtokenAmount;
     }
 
     constructor(IFlashLoan _flashLoan, address _governance, address _swapWrapper) public
@@ -55,10 +46,20 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         require(msg.sender == address(FLASHLOAN_POOL), "RepayLoan: caller is not flashloan contract");
 
         FTokenParams memory ftokenParams = _decodeParams(params);
-        require(ftokenParams.ftokens.length == 2, "RepayLoan: invalid ftoken params");
 
-        _swapAndRepay(initiator, assets[0], amounts[0], premiums[0],
-            ftokenParams.ftokens, ftokenParams.amount, ftokenParams.swapRoute);
+        (uint256 repaidAmount, uint256 backFtokenAmount) = _repay(initiator, assets[0],
+                amounts[0], premiums[0], ftokenParams.debtFToken, ftokenParams.collateralFToken,
+                ftokenParams.collateralFTokenAmount, ftokenParams.swapRoute);
+
+        IERC20(assets[0]).safeApprove(address(FLASHLOAN_POOL), 0);
+        IERC20(assets[0]).safeApprove(address(FLASHLOAN_POOL), amounts[0].add(premiums[0]));
+
+        emit RepayedLoan(
+            initiator,
+            assets[0],
+            repaidAmount,
+            backFtokenAmount
+        );
 
         return true;
     }
@@ -83,17 +84,15 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         require(err == 0, "RepayLoan: compound redeem failed");
     }
 
-    function _swapAndRepay(
+    function _repay(
         address initiator,
         address asset,
         uint256 amount,
         uint256 premium,
-        address[] memory ftokens,
+        address fDebt,
+        address fCollateral,
         uint256 ftokenAmount,
-        address[] memory swapRoute) internal {
-
-        address fDebt = ftokens[0];
-        address fCollateral = ftokens[1];
+        address[] memory swapRoute) internal returns (uint256, uint256) {
 
         uint256 repaidAmount = CToken(fDebt).borrowBalanceCurrent(initiator);
         if (amount < repaidAmount) {
@@ -141,22 +140,14 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         uint256 backFtokenAmount = CToken(fCollateral).balanceOf(address(this));
         IERC20(fCollateral).safeTransfer(initiator, backFtokenAmount);
 
-        IERC20(asset).safeApprove(address(FLASHLOAN_POOL), 0);
-        IERC20(asset).safeApprove(address(FLASHLOAN_POOL), amount.add(premium));
-
-        emit RepayedLoan(
-            initiator,
-            asset,
-            repaidAmount,
-            backFtokenAmount
-        );
+        return (repaidAmount, backFtokenAmount);
     }
 
     function _decodeParams(bytes memory params) internal pure returns (FTokenParams memory) {
-        (address[] memory ftokens, uint256 amount, address[] memory swapRoute)
-            = abi.decode(params, (address[], uint256, address[]));
+        (address debtFToken, address collateralFToken, uint256 amount, address[] memory swapRoute)
+            = abi.decode(params, (address, address, uint256, address[]));
 
-        return FTokenParams(ftokens, amount, swapRoute);
+        return FTokenParams(debtFToken, collateralFToken, amount, swapRoute);
     }
 
 }

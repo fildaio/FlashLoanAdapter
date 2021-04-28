@@ -8,12 +8,16 @@ import './Governable.sol';
 import './dependency.sol';
 import './swap/SwapWrapper.sol';
 import './swap/uniswap/IUniswapV2Router02.sol';
+import './WETH.sol';
+import './compound/CEther.sol';
 
 contract RepayLoan is FlashLoanReceiverBase, Governable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
     SwapWrapper public swap;
+    WETH public _WETH;
+    address public fETH;
 
     event RepayedLoan(
         address indexed initiator,
@@ -29,11 +33,13 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         address[] swapRoute;
     }
 
-    constructor(IFlashLoan _flashLoan, address _governance, address _swapWrapper) public
+    constructor(IFlashLoan _flashLoan, address _governance, address _swapWrapper, address _weth, address _fETH) public
         FlashLoanReceiverBase(_flashLoan)
         Governable(_governance) {
         require(_swapWrapper != address(0), "RepayLoan: invalid parameter");
         swap = SwapWrapper(_swapWrapper);
+        _WETH = WETH(_weth);
+        fETH = _fETH;
     }
 
     function executeOperation(
@@ -82,6 +88,10 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         IERC20(ftoken).safeTransferFrom(initiator, address(this), amount);
         uint err = CToken(ftoken).redeemUnderlying(underlyingAmount);
         require(err == 0, "RepayLoan: compound redeem failed");
+
+        if (ftoken == fETH) {
+            _WETH.deposit.value(underlyingAmount)();
+        }
     }
 
     function _repay(
@@ -99,10 +109,16 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
             repaidAmount = amount;
         }
 
-        IERC20(asset).safeApprove(fDebt, 0);
-        IERC20(asset).safeApprove(fDebt, repaidAmount);
-        uint err = CToken(fDebt).repayBorrowBehalf(initiator, repaidAmount);
-        require(err == 0, 'RepayLoan: compound repay failed');
+        if (asset == address(_WETH)) {
+            _WETH.withdraw(repaidAmount);
+            // repay loan.
+            CEther(fDebt).repayBorrowBehalf.value(repaidAmount)(initiator);
+        } else {
+            IERC20(asset).safeApprove(fDebt, 0);
+            IERC20(asset).safeApprove(fDebt, repaidAmount);
+            uint err = CToken(fDebt).repayBorrowBehalf(initiator, repaidAmount);
+            require(err == 0, 'RepayLoan: compound repay failed');
+        }
 
         if (fDebt != fCollateral) {
             require(swapRoute.length > 1, "RepayLoan: invalid swap route");
@@ -117,7 +133,12 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
 
             _pullFtoken(initiator, fCollateral, ftokenAmount, maxSwapAmount);
 
-            address underlying = CToken(fCollateral).underlying();
+            address underlying;
+            if (fCollateral == fETH) {
+                underlying = address(_WETH);
+            } else {
+                underlying = CToken(fCollateral).underlying();
+            }
             IERC20(underlying).safeApprove(address(swap), 0);
             IERC20(underlying).safeApprove(address(swap), maxSwapAmount);
 
@@ -126,11 +147,16 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
 
             if (amountIn < maxSwapAmount) {
                 uint256 mintAmount = maxSwapAmount.sub(amountIn);
-                IERC20(underlying).safeApprove(fCollateral, 0);
-                IERC20(underlying).safeApprove(fCollateral, mintAmount);
+                if (fCollateral == fETH) {
+                    _WETH.withdraw(mintAmount);
+                    CEther(fCollateral).mint.value(mintAmount)();
+                } else {
+                    IERC20(underlying).safeApprove(fCollateral, 0);
+                    IERC20(underlying).safeApprove(fCollateral, mintAmount);
 
-                err = CToken(fCollateral).mint(mintAmount);
-                require(err == 0, 'RepayLoan: compound mint failed');
+                    uint err = CToken(fCollateral).mint(mintAmount);
+                    require(err == 0, 'RepayLoan: compound mint failed');
+                }
             }
         }
         else {
@@ -138,7 +164,9 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         }
 
         uint256 backFtokenAmount = CToken(fCollateral).balanceOf(address(this));
-        IERC20(fCollateral).safeTransfer(initiator, backFtokenAmount);
+        if (backFtokenAmount > 0) {
+            IERC20(fCollateral).safeTransfer(initiator, backFtokenAmount);
+        }
 
         return (repaidAmount, backFtokenAmount);
     }
@@ -150,4 +178,5 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         return FTokenParams(debtFToken, collateralFToken, amount, swapRoute);
     }
 
+    function() external payable {}
 }

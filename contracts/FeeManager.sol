@@ -11,12 +11,13 @@ contract FeeManager is Governable {
     using SafeERC20 for IERC20;
 
     NoMintRewardPool public daoPool;
-    uint256 public feeTotal;
+    uint256 constant internal feeMolecular = 10;
+    uint256 constant internal feeDenominator = 10000; // Handling fee 1/1000
+    uint256 constant internal freeQuota = 1e24; // 1 million in dao pool free
 
     constructor(address _governance, address _daoPool) public Governable(_governance) {
         require(_daoPool != address(0), "dao pool shouldn't be empty");
         daoPool = NoMintRewardPool(_daoPool);
-        feeTotal = 100;
     }
 
     function setDaoPool(address _daoPool) external onlyGovernance {
@@ -28,13 +29,10 @@ contract FeeManager is Governable {
         require(initiator != address(0), "initiator shouldn't be empty");
         require(amount > 0, "amount shouldn't be zero");
 
-        uint8 decimals = IERC20Detailed(daoPool.lpToken()).decimals();
-        uint256 balance = daoPool.balanceOf(initiator).div(10 ** uint256(decimals));
-        if (balance > 1e6) return 0;
+        uint256 balance = daoPool.balanceOf(initiator);
 
-        uint256 total = amount.mul(feeTotal).div(1e5);
-
-        return balance > 0 ? total.sub(total.mul(balance).div(1e6)) : total;
+        return balance >= freeQuota
+            ? 0 : amount.mul(freeQuota.sub(balance)).div(freeQuota).mul(feeMolecular).div(feeDenominator);
     }
 
 }

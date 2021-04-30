@@ -10,20 +10,23 @@ import './swap/SwapWrapper.sol';
 import './swap/uniswap/IUniswapV2Router02.sol';
 import './WETH.sol';
 import './compound/CEther.sol';
+import './FeeManager.sol';
 
-contract RepayLoan is FlashLoanReceiverBase, Governable {
+contract RepayLoan is FlashLoanReceiverBase, Governable, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
     SwapWrapper public swap;
     WETH public _WETH;
     address public fETH;
+    FeeManager public feeManager;
 
     event RepayedLoan(
         address indexed initiator,
         address indexed asset,
         uint256 repayAmount,
-        uint256 backFtokenAmount
+        uint256 backFtokenAmount,
+        uint256 fee
     );
 
     struct FTokenParams {
@@ -33,13 +36,26 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         address[] swapRoute;
     }
 
-    constructor(IFlashLoan _flashLoan, address _governance, address _swapWrapper, address _weth, address _fETH) public
+    struct RepayLocalParams {
+        address asset;
+        uint256 amount;
+        uint256 premium;
+        uint256 fee;
+        uint256 repaidAmount;
+        uint256 backFtokenAmount;
+    }
+
+    constructor(IFlashLoan _flashLoan, address _governance,
+            address _swapWrapper, address _weth, address _fETH, address _feeManager) public
         FlashLoanReceiverBase(_flashLoan)
         Governable(_governance) {
-        require(_swapWrapper != address(0), "RepayLoan: invalid parameter");
+        require(_swapWrapper != address(0) && _weth != address(0)
+            && _fETH != address(0) && _feeManager != address(0), "RepayLoan: invalid parameter");
+
         swap = SwapWrapper(_swapWrapper);
         _WETH = WETH(_weth);
         fETH = _fETH;
+        feeManager = FeeManager(_feeManager);
     }
 
     function executeOperation(
@@ -52,31 +68,40 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         require(msg.sender == address(FLASHLOAN_POOL), "RepayLoan: caller is not flashloan contract");
 
         FTokenParams memory ftokenParams = _decodeParams(params);
+        RepayLocalParams memory vars;
+        vars.asset = assets[0];
+        vars.amount = amounts[0];
+        vars.premium = premiums[0];
+        vars.fee = feeManager.getFee(initiator, amounts[0]);
 
-        (uint256 repaidAmount, uint256 backFtokenAmount) = _repay(initiator, assets[0],
-                amounts[0], premiums[0], ftokenParams.debtFToken, ftokenParams.collateralFToken,
+        (vars.repaidAmount, vars.backFtokenAmount) = _repay(initiator, vars.asset,
+                vars.amount, vars.premium, vars.fee, ftokenParams.debtFToken, ftokenParams.collateralFToken,
                 ftokenParams.collateralFTokenAmount, ftokenParams.swapRoute);
 
-        IERC20(assets[0]).safeApprove(address(FLASHLOAN_POOL), 0);
-        IERC20(assets[0]).safeApprove(address(FLASHLOAN_POOL), amounts[0].add(premiums[0]));
+        if (vars.fee > 0) {
+            IERC20(vars.asset).safeTransfer(owner(), vars.fee);
+        }
+
+        IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), 0);
+        IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), amounts[0].add(premiums[0]));
 
         emit RepayedLoan(
             initiator,
-            assets[0],
-            repaidAmount,
-            backFtokenAmount
+            vars.asset,
+            vars.repaidAmount,
+            vars.backFtokenAmount,
+            vars.fee
         );
 
         return true;
     }
 
-    function withdrawERC20(address _token, address _account, uint256 amount) public onlyGovernance returns (uint256) {
+    function withdrawERC20(address _token, address _account, uint256 amount) public onlyOwner {
         IERC20 token = IERC20(_token);
         if (amount > token.balanceOf(address(this))) {
             amount = token.balanceOf(address(this));
         }
         token.safeTransfer(_account, amount);
-        return amount;
     }
 
     function _pullFtoken(
@@ -99,6 +124,7 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
         address asset,
         uint256 amount,
         uint256 premium,
+        uint256 fee,
         address fDebt,
         address fCollateral,
         uint256 ftokenAmount,
@@ -127,7 +153,7 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
                 maxSwapAmount = maxSwapAmount.mul(repaidAmount).div(amount);
             }
 
-            uint256 neededForFlashLoanDebt = repaidAmount.add(premium);
+            uint256 neededForFlashLoanDebt = repaidAmount.add(premium).add(fee);
             uint256[] memory amountsIn = IUniswapV2Router02(swap.router()).getAmountsIn(neededForFlashLoanDebt, swapRoute);
             require(amountsIn[0] <= maxSwapAmount, 'RepayLoan: slippage too high');
 
@@ -160,7 +186,7 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
             }
         }
         else {
-            _pullFtoken(initiator, fCollateral, ftokenAmount, repaidAmount.add(premium));
+            _pullFtoken(initiator, fCollateral, ftokenAmount, repaidAmount.add(premium).add(fee));
         }
 
         uint256 backFtokenAmount = CToken(fCollateral).balanceOf(address(this));
@@ -179,4 +205,9 @@ contract RepayLoan is FlashLoanReceiverBase, Governable {
     }
 
     function() external payable {}
+
+    function setFeeManager(address _feeManager) external onlyGovernance {
+        require(_feeManager != address(0), "RepayLoan: invalid parameter");
+        feeManager = FeeManager(_feeManager);
+    }
 }

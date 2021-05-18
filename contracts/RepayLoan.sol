@@ -2,24 +2,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.5.0;
 
-import "./flashloan/FlashLoanReceiverBase.sol";
-import './compound/CToken.sol';
-import './Governable.sol';
-import './dependency.sol';
-import './swap/SwapWrapper.sol';
+import './BaseAdapter.sol';
 import './swap/uniswap/IUniswapV2Router02.sol';
-import './WETH.sol';
 import './compound/CEther.sol';
-import './FeeManager.sol';
 
-contract RepayLoan is FlashLoanReceiverBase, Governable, Ownable {
+contract RepayLoan is BaseAdapter {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
-
-    SwapWrapper public swap;
-    WETH public _WETH;
-    address public fETH;
-    FeeManager public feeManager;
 
     event RepayedLoan(
         address indexed initiator,
@@ -47,16 +36,8 @@ contract RepayLoan is FlashLoanReceiverBase, Governable, Ownable {
 
     constructor(IFlashLoan _flashLoan, address _governance,
             address _swapWrapper, address _weth, address _fETH, address _feeManager) public
-        FlashLoanReceiverBase(_flashLoan)
-        Governable(_governance) {
-        require(_swapWrapper != address(0) && _weth != address(0)
-            && _fETH != address(0) && _feeManager != address(0), "RepayLoan: invalid parameter");
-
-        swap = SwapWrapper(_swapWrapper);
-        _WETH = WETH(_weth);
-        fETH = _fETH;
-        feeManager = FeeManager(_feeManager);
-    }
+        BaseAdapter(_flashLoan, _governance, _swapWrapper, _weth, _fETH, _feeManager)
+        {}
 
     function executeOperation(
         address[] calldata assets,
@@ -83,7 +64,7 @@ contract RepayLoan is FlashLoanReceiverBase, Governable, Ownable {
         }
 
         IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), 0);
-        IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), amounts[0].add(premiums[0]));
+        IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), vars.amount.add(vars.premium));
 
         emit RepayedLoan(
             initiator,
@@ -94,29 +75,6 @@ contract RepayLoan is FlashLoanReceiverBase, Governable, Ownable {
         );
 
         return true;
-    }
-
-    function withdrawERC20(address _token, address _account, uint256 amount) public onlyOwner {
-        IERC20 token = IERC20(_token);
-        if (amount > token.balanceOf(address(this))) {
-            amount = token.balanceOf(address(this));
-        }
-        token.safeTransfer(_account, amount);
-    }
-
-    function _pullFtoken(
-        address initiator,
-        address ftoken,
-        uint256 amount,
-        uint256 underlyingAmount) internal {
-
-        IERC20(ftoken).safeTransferFrom(initiator, address(this), amount);
-        uint err = CToken(ftoken).redeemUnderlying(underlyingAmount);
-        require(err == 0, "RepayLoan: compound redeem failed");
-
-        if (ftoken == fETH) {
-            _WETH.deposit.value(underlyingAmount)();
-        }
     }
 
     function _repay(
@@ -205,9 +163,4 @@ contract RepayLoan is FlashLoanReceiverBase, Governable, Ownable {
     }
 
     function() external payable {}
-
-    function setFeeManager(address _feeManager) external onlyGovernance {
-        require(_feeManager != address(0), "RepayLoan: invalid parameter");
-        feeManager = FeeManager(_feeManager);
-    }
 }

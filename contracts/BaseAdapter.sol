@@ -13,6 +13,11 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
+    event FeeManagerChanged(
+        address _from,
+        address _to
+    );
+
     SwapWrapper public swap;
     WETH public _WETH;
     address public fETH;
@@ -70,6 +75,10 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
 
     function setFeeManager(address _feeManager) external onlyGovernance {
         require(_feeManager != address(0), "FlashLoanAdapter: invalid parameter");
+
+        address from = address(feeManager);
         feeManager = FeeManager(_feeManager);
+
+        emit FeeManagerChanged(from, _feeManager);
     }
 }

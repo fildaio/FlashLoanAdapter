@@ -11,8 +11,8 @@ contract FeeManager is Governable {
     using SafeERC20 for IERC20;
 
     NoMintRewardPool public daoPool;
-    uint256 constant internal FEE_MOLECULAR = 10;
-    uint256 constant internal FEE_DENOMINATOR = 10000; // Handling fee 1/1000
+    uint256 public FEE_MOLECULAR = 10;
+    uint256 constant public FEE_DENOMINATOR = 10000; // Handling fee FEE_MOLECULAR / FEE_DENOMINATOR
     uint256 constant internal FREE_QUOTA = 1e24; // 1 million in dao pool free
 
     constructor(address _governance, address _daoPool) public Governable(_governance) {
@@ -35,4 +35,7 @@ contract FeeManager is Governable {
             ? 0 : amount.mul(FREE_QUOTA.sub(balance)).mul(FEE_MOLECULAR).div(FREE_QUOTA).div(FEE_DENOMINATOR);
     }
 
+    function setFeeMolecular(uint256 molecular) external onlyGovernance {
+        FEE_MOLECULAR = molecular;
+    }
 }

@@ -1,10 +1,10 @@
-const RepayLoan = artifacts.require("RepayLoan");
+const Liquidation = artifacts.require("Liquidation");
 const FeeManager = artifacts.require("FeeManager");
 
 module.exports = async function (deployer, network, accounts) {
     const feeManage = await FeeManager.deployed();
 
-    await deployer.deploy(RepayLoan,
+    await deployer.deploy(Liquidation,
         '0x', // flashloan address
         '0x', // _governance
         '0xCD83Fb2cb441127602e74860117c8E26E0864692', // _swapWrapper
@@ -14,6 +14,6 @@ module.exports = async function (deployer, network, accounts) {
         );
 
     console.log("***********************************************");
-    console.log("RepayLoan address:", RepayLoan.address);
+    console.log("Liquidation address:", Liquidation.address);
     console.log("***********************************************");
 };

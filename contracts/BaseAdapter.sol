@@ -70,6 +70,10 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         }
     }
 
+    function getUnderlying(address ftoken) internal view returns (address) {
+        return ftoken == fETH ? address(_WETH) : CToken(ftoken).underlying();
+    }
+
     function withdrawERC20(address _token, address _account, uint256 amount) public onlyOwner {
         IERC20 token = IERC20(_token);
         if (amount > token.balanceOf(address(this))) {

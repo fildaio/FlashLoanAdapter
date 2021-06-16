@@ -18,6 +18,11 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         address _to
     );
 
+    event FlashLoanPoolChanged(
+        address _from,
+        address _to
+    );
+
     SwapWrapper public swap;
     WETH public _WETH;
     address public fETH;
@@ -80,5 +85,14 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         feeManager = FeeManager(_feeManager);
 
         emit FeeManagerChanged(from, _feeManager);
+    }
+
+    function setFlashLoanPool(address _flashLoan) external onlyGovernance {
+        require(_flashLoan != address(0), "FlashLoanAdapter: invalid parameter");
+
+        address from = address(FLASHLOAN_POOL);
+        FLASHLOAN_POOL = IFlashLoan(_flashLoan);
+
+        emit FlashLoanPoolChanged(from, _flashLoan);
     }
 }

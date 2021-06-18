@@ -27,10 +27,9 @@ contract DepositRepay is BaseAdapter {
         address debtFToken;
         address collateralFToken;
         uint256 collateralFTokenAmount;
-        address[] swapARoute;
-        uint256 minOut;
-        address[] swapBRoute;
-        uint256 maxIn;
+        uint8 mode; // 0: spend collateralFTokenAmount. 1: spend all ftoken of user. 2: repay all debt.
+        address[] swapRoute;
+        uint256 slippage;
     }
 
     struct RepayLocalParams {
@@ -43,10 +42,11 @@ contract DepositRepay is BaseAdapter {
 
     struct ImplLocalParams {
         uint err;
-        uint256 ftokenAmount;
         uint256 debt;
         uint256 repayAmount;
-        uint256 maxCollateralAmount;
+        uint256 maxSpendAmount;
+        uint256 underlyingAmount;
+        uint256 pullFTokenAmount;
         uint256 backFtokenAmount;
     }
 
@@ -104,58 +104,59 @@ contract DepositRepay is BaseAdapter {
         RepayLocalParams memory vars
         ) internal {
 
-        require(vars.asset == getUnderlying(params.collateralFToken), "DepositRepay: asset and collateral ftoken not match");
+        require(vars.asset == getUnderlying(params.collateralFToken),
+                "DepositRepay: asset and collateral ftoken not match");
 
         ImplLocalParams memory local;
 
-        if (params.collateralFToken == fETH) {
-            _WETH.withdraw(vars.amount);
-            CEther(params.collateralFToken).mint.value(vars.amount)();
-        } else {
-            IERC20(vars.asset).safeApprove(params.collateralFToken, 0);
-            IERC20(vars.asset).safeApprove(params.collateralFToken, vars.amount);
 
-            local.err = CToken(params.collateralFToken).mint(vars.amount);
-            require(local.err == 0, 'DepositRepay: compound mint failed');
-        }
+        local.pullFTokenAmount = params.mode == 1
+                ? IERC20(params.collateralFToken).balanceOf(vars.initiator) : params.collateralFTokenAmount;
+        local.underlyingAmount = CToken(params.collateralFToken)
+                .exchangeRateCurrent().mul(local.pullFTokenAmount).div(1e18);
 
-
-        local.ftokenAmount = CToken(params.collateralFToken).balanceOf(address(this));
-        IERC20(params.collateralFToken).safeTransfer(vars.initiator, local.ftokenAmount);
+        local.maxSpendAmount = vars.amount > local.underlyingAmount
+                ? local.underlyingAmount.sub(vars.premium).sub(vars.fee) : vars.amount.sub(vars.premium).sub(vars.fee);
 
         local.debt = CToken(params.debtFToken).borrowBalanceCurrent(vars.initiator);
-        local.repayAmount = local.debt;
-        local.maxCollateralAmount = CToken(params.collateralFToken)
-                .exchangeRateCurrent().mul(params.collateralFTokenAmount).div(1e18).sub(vars.premium).sub(vars.fee);
 
         if (params.debtFToken != params.collateralFToken) {
+            require(params.swapRoute.length > 1, "DepositRepay: swap route cannot be empty");
 
-            if (params.swapARoute.length > 1) {
-                uint256[] memory amounts = IUniswapV2Router02(swap.router()).getAmountsOut(local.maxCollateralAmount, params.swapARoute);
-                require(amounts[amounts.length - 1] > params.minOut, 'DepositRepay: swap A slippage too high');
+            // repay all det.
+            if (params.mode == 2) {
+                uint256[] memory amounts = IUniswapV2Router02(swap.router()).getAmountsIn(local.debt, params.swapRoute);
+                require(amounts[0] <= params.slippage, 'DepositRepay: swap slippage too high');
 
-                if (amounts[amounts.length - 1] >= local.debt) {
-                    swapExactDebts(vars.initiator, local.debt, params);
-                } else {
-                    _pullFtoken(vars.initiator, params.collateralFToken, params.collateralFTokenAmount, local.maxCollateralAmount);
+                IERC20(vars.asset).safeApprove(address(swap), 0);
+                IERC20(vars.asset).safeApprove(address(swap), amounts[0]);
 
-                    IERC20(vars.asset).safeApprove(address(swap), 0);
-                    IERC20(vars.asset).safeApprove(address(swap), local.maxCollateralAmount);
-                    (, local.repayAmount) = swap.swapExactTokensForTokens(
-                            local.maxCollateralAmount, params.swapARoute, params.minOut);
-                }
+                (, local.repayAmount) = swap.swapTokensForExactTokens(
+                        local.debt, params.swapRoute, params.slippage);
             } else {
-                swapExactDebts(vars.initiator, local.debt, params);
+                uint256[] memory amounts = IUniswapV2Router02(swap.router()).getAmountsOut(local.maxSpendAmount, params.swapRoute);
+                require(amounts[amounts.length - 1] > params.slippage, 'DepositRepay: swap slippage too high');
+
+                IERC20(vars.asset).safeApprove(address(swap), 0);
+                IERC20(vars.asset).safeApprove(address(swap), local.maxSpendAmount);
+                (, local.repayAmount) = swap.swapExactTokensForTokens(
+                        local.maxSpendAmount, params.swapRoute, params.slippage);
             }
 
         } else {
-            local.repayAmount = local.maxCollateralAmount > local.debt ? local.debt : local.maxCollateralAmount;
-            _pullFtoken(vars.initiator, params.collateralFToken, params.collateralFTokenAmount, local.repayAmount);
+
+            if (params.mode == 2) {
+                require(local.maxSpendAmount >= local.debt, "DepositRepay: Not enough to repay the loan");
+                local.repayAmount = local.debt;
+            } else {
+                local.repayAmount = local.maxSpendAmount;
+            }
+
         }
 
+        // repay loan.
         if (params.debtFToken == fETH) {
             _WETH.withdraw(local.repayAmount);
-            // repay loan.
             CEther(params.debtFToken).repayBorrowBehalf.value(local.repayAmount)(vars.initiator);
         } else {
             IERC20(getUnderlying(params.debtFToken)).safeApprove(params.debtFToken, 0);
@@ -164,7 +165,10 @@ contract DepositRepay is BaseAdapter {
             require(local.err == 0, 'DepositRepay: compound repay failed');
         }
 
-        _pullFtoken(vars.initiator, params.collateralFToken, local.ftokenAmount, vars.amount.add(vars.premium).add(vars.fee));
+
+        // pull ftoken from user.
+        _pullFtoken(vars.initiator, params.collateralFToken, local.pullFTokenAmount,
+            vars.amount.add(vars.premium).add(vars.fee).sub(IERC20(vars.asset).balanceOf(address(this))));
 
         local.backFtokenAmount = CToken(params.collateralFToken).balanceOf(address(this));
         if (local.backFtokenAmount > 0) {
@@ -172,27 +176,10 @@ contract DepositRepay is BaseAdapter {
                     local.backFtokenAmount > 10000 ? vars.initiator : owner(), local.backFtokenAmount);
         }
 
+        // check slippage by oracle.
         uint256 spendAmount = CToken(params.collateralFToken)
-                .exchangeRateCurrent().mul(params.collateralFTokenAmount.sub(local.backFtokenAmount)).div(1e18);
+                .exchangeRateCurrent().mul(local.pullFTokenAmount.sub(local.backFtokenAmount)).div(1e18);
         require(checkByOracle(params.collateralFToken, spendAmount, params.debtFToken, local.repayAmount), "DepositRepay: slippage too high");
-    }
-
-    function swapExactDebts(
-        address initiator,
-        uint256 amountOut,
-        DepositRepayParams memory params
-        ) internal {
-        require(params.swapBRoute.length > 1, 'DepositRepay: swap B route should not be empty');
-
-        uint256[] memory amounts = IUniswapV2Router02(swap.router()).getAmountsIn(amountOut, params.swapBRoute);
-        require(amounts[0] <= params.maxIn, 'DepositRepay: swap B slippage too high');
-
-        _pullFtoken(initiator, params.collateralFToken, params.collateralFTokenAmount, amounts[0]);
-
-        IERC20(params.swapBRoute[0]).safeApprove(address(swap), 0);
-        IERC20(params.swapBRoute[0]).safeApprove(address(swap), amounts[0]);
-
-        swap.swapTokensForExactTokens(amountOut, params.swapBRoute, params.maxIn);
     }
 
     function checkByOracle(address ftokenA, uint256 amountA, address ftokenB, uint256 amountB) private view returns (bool) {
@@ -227,14 +214,13 @@ contract DepositRepay is BaseAdapter {
             address debtFToken,
             address collateralFToken,
             uint256 amount,
-            address[] memory swapARoute,
-            uint256 minOut,
-            address[] memory swapBRoute,
-            uint256 maxIn
+            uint8 mode,
+            address[] memory swapRoute,
+            uint256 slippage
         )
-            = abi.decode(params, (address, address, uint256, address[], uint256, address[], uint256));
+            = abi.decode(params, (address, address, uint256, uint8, address[], uint256));
 
-        return DepositRepayParams(debtFToken, collateralFToken, amount, swapARoute, minOut, swapBRoute, maxIn);
+        return DepositRepayParams(debtFToken, collateralFToken, amount, mode, swapRoute, slippage);
     }
 
     function setOracle(address _oracle) external onlyGovernance {

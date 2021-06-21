@@ -5,11 +5,6 @@ pragma solidity ^0.5.0;
 import './BaseAdapter.sol';
 import './swap/uniswap/IUniswapV2Router02.sol';
 import './compound/CEther.sol';
-import './oracle/ChainlinkAdaptor.sol';
-
-contract IERC20Extented is IERC20 {
-    function decimals() public view returns (uint8);
-}
 
 contract DepositRepay is BaseAdapter {
     using SafeMath for uint256;
@@ -50,23 +45,9 @@ contract DepositRepay is BaseAdapter {
         uint256 backFtokenAmount;
     }
 
-    event OracleChanged(
-        address indexed from,
-        address indexed to
-    );
-
-    ChainlinkAdaptor public oracle;
-    address public fHUSD;
-
     constructor(IFlashLoan _flashLoan, address _governance,
             address _swapWrapper, address _weth, address _fETH, address _feeManager, address _oracle, address _fHUSD) public
-        BaseAdapter(_flashLoan, _governance, _swapWrapper, _weth, _fETH, _feeManager) {
-
-        require(_fHUSD != address(0), "DepositRepay: fHUSD address can not be zero");
-        require(Address.isContract(_oracle), "DepositRepay: oracle address is not contract");
-        oracle = ChainlinkAdaptor(_oracle);
-
-        fHUSD = _fHUSD;
+        BaseAdapter(_flashLoan, _governance, _swapWrapper, _weth, _fETH, _feeManager, _oracle, _fHUSD) {
     }
 
     function executeOperation(
@@ -190,33 +171,6 @@ contract DepositRepay is BaseAdapter {
         require(checkByOracle(params.collateralFToken, spendAmount, params.debtFToken, local.repayAmount), "DepositRepay: slippage too high");
     }
 
-    function checkByOracle(address ftokenA, uint256 amountA, address ftokenB, uint256 amountB) private view returns (bool) {
-        address underlyingA = getUnderlying(ftokenA);
-        address underlyingB = getUnderlying(ftokenB);
-
-        uint256 decimalsA = IERC20Extented(underlyingA).decimals();
-        uint256 decimalsB = IERC20Extented(underlyingB).decimals();
-
-        uint256 priceA = amountA.mul(getHUSDPrice(ftokenA, underlyingA)).div(10**decimalsA);
-        uint256 priceB = amountB.mul(getHUSDPrice(ftokenB, underlyingB)).div(10**decimalsB);
-
-        if (priceA <= priceB) return true;
-
-        return priceA.sub(priceB) < priceA.mul(5).div(100);
-    }
-
-    function getHUSDPrice(address ftoken, address token) private view returns (uint256) {
-        uint256 husdHTPrice = oracle.getUnderlyingPrice(CToken(fHUSD));
-        uint256 tokenHTPrice = oracle.getUnderlyingPrice(CToken(ftoken));
-
-        uint256 decimals = IERC20Extented(token).decimals();
-        return tokenHTPrice.mul(10**decimals).div(husdHTPrice);
-    }
-
-    function getHtPrice() private view returns (uint256) {
-        return uint256(1e36).div(oracle.getUnderlyingPrice(CToken(fHUSD)));
-    }
-
     function _decodeParams(bytes memory params) internal pure returns (DepositRepayParams memory) {
         (
             address debtFToken,
@@ -229,15 +183,6 @@ contract DepositRepay is BaseAdapter {
             = abi.decode(params, (address, address, uint256, uint8, address[], uint256));
 
         return DepositRepayParams(debtFToken, collateralFToken, amount, mode, swapRoute, slippage);
-    }
-
-    function setOracle(address _oracle) external onlyGovernance {
-        require(Address.isContract(_oracle), "DepositRepay: oracle address is not contract");
-
-        address from = address(oracle);
-        oracle = ChainlinkAdaptor(_oracle);
-
-        emit OracleChanged(from, _oracle);
     }
 
     function() external payable {}

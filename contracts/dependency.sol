@@ -610,3 +610,9 @@ library Arrays {
         }
     }
 }
+
+pragma solidity ^0.5.0;
+
+contract IERC20Extented is IERC20 {
+    function decimals() public view returns (uint8);
+}

@@ -35,8 +35,8 @@ contract RepayLoan is BaseAdapter {
     }
 
     constructor(IFlashLoan _flashLoan, address _governance,
-            address _swapWrapper, address _weth, address _fETH, address _feeManager) public
-        BaseAdapter(_flashLoan, _governance, _swapWrapper, _weth, _fETH, _feeManager)
+            address _swapWrapper, address _weth, address _fETH, address _feeManager, address _oracle, address _fHUSD) public
+        BaseAdapter(_flashLoan, _governance, _swapWrapper, _weth, _fETH, _feeManager, _oracle, _fHUSD)
         {}
 
     function executeOperation(

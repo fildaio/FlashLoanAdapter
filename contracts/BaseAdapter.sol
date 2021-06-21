@@ -61,6 +61,10 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         address ftoken,
         uint256 amount) internal {
 
+        if (ftoken == fETH && address(this).balance > 0) {
+            address(uint160(owner())).transfer(address(this).balance);
+        }
+
         IERC20(ftoken).safeTransferFrom(initiator, address(this), amount);
         uint err = CToken(ftoken).redeem(amount);
         require(err == 0, "FlashLoanAdapter: compound redeem failed");

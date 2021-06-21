@@ -111,6 +111,10 @@ contract DepositRepay is BaseAdapter {
             IERC20(vars.asset).safeTransfer(owner(), IERC20(vars.asset).balanceOf(address(this)).sub(vars.amount));
         }
 
+        if (IERC20(params.collateralFToken).balanceOf(address(this)) > 0) {
+            IERC20(params.collateralFToken).safeTransfer(owner(), IERC20(params.collateralFToken).balanceOf(address(this)));
+        }
+
         ImplLocalParams memory local;
 
 

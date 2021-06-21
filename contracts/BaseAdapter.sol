@@ -18,6 +18,11 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         address _to
     );
 
+    event FlashLoanPoolChanged(
+        address _from,
+        address _to
+    );
+
     SwapWrapper public swap;
     WETH public _WETH;
     address public fETH;
@@ -56,6 +61,10 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         address ftoken,
         uint256 amount) internal {
 
+        if (ftoken == fETH && address(this).balance > 0) {
+            address(uint160(owner())).transfer(address(this).balance);
+        }
+
         IERC20(ftoken).safeTransferFrom(initiator, address(this), amount);
         uint err = CToken(ftoken).redeem(amount);
         require(err == 0, "FlashLoanAdapter: compound redeem failed");
@@ -63,6 +72,10 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         if (ftoken == fETH) {
             _WETH.deposit.value(address(this).balance)();
         }
+    }
+
+    function getUnderlying(address ftoken) internal view returns (address) {
+        return ftoken == fETH ? address(_WETH) : CToken(ftoken).underlying();
     }
 
     function withdrawERC20(address _token, address _account, uint256 amount) public onlyOwner {
@@ -80,5 +93,14 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         feeManager = FeeManager(_feeManager);
 
         emit FeeManagerChanged(from, _feeManager);
+    }
+
+    function setFlashLoanPool(address _flashLoan) external onlyGovernance {
+        require(_flashLoan != address(0), "FlashLoanAdapter: invalid parameter");
+
+        address from = address(FLASHLOAN_POOL);
+        FLASHLOAN_POOL = IFlashLoan(_flashLoan);
+
+        emit FlashLoanPoolChanged(from, _flashLoan);
     }
 }

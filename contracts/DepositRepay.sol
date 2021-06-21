@@ -107,6 +107,10 @@ contract DepositRepay is BaseAdapter {
         require(vars.asset == getUnderlying(params.collateralFToken),
                 "DepositRepay: asset and collateral ftoken not match");
 
+        if (IERC20(vars.asset).balanceOf(address(this)) > vars.amount) {
+            IERC20(vars.asset).safeTransfer(owner(), IERC20(vars.asset).balanceOf(address(this)).sub(vars.amount));
+        }
+
         ImplLocalParams memory local;
 
 

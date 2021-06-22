@@ -11,6 +11,8 @@ module.exports = async function (deployer, network, accounts) {
         '0x5545153CCFcA01fbd7Dd11C0b23ba694D9509A6F', // _weth
         '0x824151251B38056d54A15E56B73c54ba44811aF8', // _fETH
         feeManage.address, // _feeManager
+        '0xa7042d87b25b18875cd1d2b1ce535c5488bc4fd0', // _oracle
+        '0xB16Df14C53C4bcfF220F4314ebCe70183dD804c0', // _fHUSD
         '0xb74633f2022452f377403B638167b0A135DB096d' // _comptroller
         );
 

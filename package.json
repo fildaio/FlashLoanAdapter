@@ -22,5 +22,8 @@
   "bugs": {
     "url": "https://github.com/zuohuahua/FlashLoanAdapter/issues"
   },
-  "homepage": "https://github.com/zuohuahua/FlashLoanAdapter#readme"
+  "homepage": "https://github.com/zuohuahua/FlashLoanAdapter#readme",
+  "dependencies": {
+    "@truffle/hdwallet-provider": "^1.5.0"
+  }
 }

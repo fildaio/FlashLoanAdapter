@@ -83,6 +83,7 @@ contract Liquidation is BaseAdapter {
             require(params.swapRepayPath.length > 1, "Liquidation: swapRepayPath is invalid");
         }
 
+        uint err = 0;
         // do liquidate
         if (params.fDebt == fETH) {
             _WETH.withdraw(vars.liquidateAmount);
@@ -90,11 +91,13 @@ contract Liquidation is BaseAdapter {
         } else {
             IERC20(vars.debtToken).safeApprove(params.fDebt, 0);
             IERC20(vars.debtToken).safeApprove(params.fDebt, vars.liquidateAmount);
-            CToken(params.fDebt).liquidateBorrow(params.borrower, vars.liquidateAmount, CTokenInterface(params.fCollateral));
+            err = CToken(params.fDebt).liquidateBorrow(params.borrower, vars.liquidateAmount, CTokenInterface(params.fCollateral));
         }
+        require(err == 0, "Liquidation: liquidateBorrow failed");
 
         // redeem collateral
-        CToken(params.fCollateral).redeem(CToken(params.fCollateral).balanceOf(address(this)));
+        err = CToken(params.fCollateral).redeem(CToken(params.fCollateral).balanceOf(address(this)));
+        require(err == 0, "Liquidation: redeem failed");
         if (params.fCollateral == fETH) {
              _WETH.deposit.value(address(this).balance)();
         }

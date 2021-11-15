@@ -16,8 +16,10 @@ contract FeeManager is Governable {
     uint256 constant internal FREE_QUOTA = 1e24; // 1 million in dao pool free
 
     constructor(address _governance, address _daoPool) public Governable(_governance) {
-        require(_daoPool != address(0), "dao pool shouldn't be empty");
-        daoPool = NoMintRewardPool(_daoPool);
+        // require(_daoPool != address(0), "dao pool shouldn't be empty");
+        if (_daoPool != address(0)) {
+            daoPool = NoMintRewardPool(_daoPool);
+        }
     }
 
     function setDaoPool(address _daoPool) external onlyGovernance {
@@ -28,6 +30,10 @@ contract FeeManager is Governable {
     function getFee(address initiator, uint256 amount) external view returns (uint256) {
         require(initiator != address(0), "initiator shouldn't be empty");
         require(amount > 0, "amount shouldn't be zero");
+
+        if (address(daoPool) == address(0)) {
+            return amount.mul(FEE_MOLECULAR).div(FEE_DENOMINATOR);
+        }
 
         uint256 balance = daoPool.balanceOf(initiator);
 

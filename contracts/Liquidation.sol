@@ -33,46 +33,47 @@ contract Liquidation is BaseAdapter {
         address initiator;
     }
 
-    constructor(IFlashLoan _flashLoan, address _governance,
+    constructor(address _governance,
             address _swapWrapper, address _weth, address _fETH, address _feeManager, address _oracle, address _fHUSD) public
-        BaseAdapter(_flashLoan, _governance, _swapWrapper, _weth, _fETH, _feeManager, _oracle, _fHUSD) {}
+        BaseAdapter(_governance, _swapWrapper, _weth, _fETH, _feeManager, _oracle, _fHUSD) {}
 
 
-    function executeOperation(
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        uint256[] calldata premiums,
+    function onFlashLoan(
         address initiator,
-        bytes calldata params
-    ) external returns (bool) {
-        require(msg.sender == address(FLASHLOAN_POOL), "Liquidation: caller is not flashloan contract");
+        address token,
+        uint256 amount,
+        uint256 fee,
+        bytes calldata data
+    ) external returns (bytes32) {
+        require(IERC20(token).balanceOf(address(this)) == amount, "Liquidation: token amount is not enough");
 
-        LiquidationParams memory handlerParams = _decodeParams(params);
+        LiquidationParams memory handlerParams = _decodeParams(data);
 
         LiquidationLocalParams memory vars;
-        vars.debtToken = assets[0];
-        vars.liquidateAmount = amounts[0];
-        vars.premium = premiums[0];
+        vars.debtToken = token;
+        vars.liquidateAmount = amount;
+        vars.premium = fee;
         vars.initiator = initiator;
         vars.fee = feeManager.getFee(vars.initiator, vars.liquidateAmount);
 
-        (address token, uint256 amount) = _liquidateAndSwap(handlerParams, vars);
+        (address earnedToken, uint256 earnedAmount) = _liquidateAndSwap(handlerParams, vars);
 
         if (vars.fee > 0) {
             IERC20(vars.debtToken).safeTransfer(owner(), vars.fee);
         }
 
-        IERC20(vars.debtToken).safeApprove(address(FLASHLOAN_POOL), 0);
-        IERC20(vars.debtToken).safeApprove(address(FLASHLOAN_POOL), vars.liquidateAmount.add(vars.premium));
+        IERC20(vars.debtToken).safeApprove(msg.sender, 0);
+        IERC20(vars.debtToken).safeApprove(msg.sender, vars.liquidateAmount.add(vars.premium));
 
         emit LiquidationEarned(
             vars.initiator,
-            token,
-            amount
+            earnedToken,
+            earnedAmount
         );
 
-        return true;
+        return keccak256("ERC3156FlashBorrower.onFlashLoan");
     }
+
 
     function _liquidateAndSwap(
         LiquidationParams memory params,

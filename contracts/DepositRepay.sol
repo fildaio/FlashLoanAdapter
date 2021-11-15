@@ -45,25 +45,25 @@ contract DepositRepay is BaseAdapter {
         uint256 backFtokenAmount;
     }
 
-    constructor(IFlashLoan _flashLoan, address _governance,
+    constructor(address _governance,
             address _swapWrapper, address _weth, address _fETH, address _feeManager, address _oracle, address _fHUSD) public
-        BaseAdapter(_flashLoan, _governance, _swapWrapper, _weth, _fETH, _feeManager, _oracle, _fHUSD) {
+        BaseAdapter(_governance, _swapWrapper, _weth, _fETH, _feeManager, _oracle, _fHUSD) {
     }
 
-    function executeOperation(
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        uint256[] calldata premiums,
+    function onFlashLoan(
         address initiator,
-        bytes calldata params
-    ) external returns (bool) {
-        require(msg.sender == address(FLASHLOAN_POOL), "RepayLoan: caller is not flashloan contract");
+        address token,
+        uint256 amount,
+        uint256 fee,
+        bytes calldata data
+    ) external returns (bytes32) {
+        require(IERC20(token).balanceOf(address(this)) == amount, "DepositRepay: token amount is not enough");
 
-        DepositRepayParams memory ftokenParams = _decodeParams(params);
+        DepositRepayParams memory ftokenParams = _decodeParams(data);
         RepayLocalParams memory vars;
-        vars.asset = assets[0];
-        vars.amount = amounts[0];
-        vars.premium = premiums[0];
+        vars.asset = token;
+        vars.amount = amount;
+        vars.premium = fee;
         vars.fee = feeManager.getFee(initiator, vars.amount);
         vars.initiator = initiator;
 
@@ -73,11 +73,10 @@ contract DepositRepay is BaseAdapter {
             IERC20(vars.asset).safeTransfer(owner(), vars.fee);
         }
 
-        IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), 0);
-        IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), vars.amount.add(vars.premium));
+        IERC20(vars.asset).safeApprove(msg.sender, 0);
+        IERC20(vars.asset).safeApprove(msg.sender, vars.amount.add(vars.premium));
 
-
-        return true;
+        return keccak256("ERC3156FlashBorrower.onFlashLoan");
     }
 
     function _repay(
@@ -104,8 +103,12 @@ contract DepositRepay is BaseAdapter {
         local.underlyingAmount = CToken(params.collateralFToken)
                 .exchangeRateCurrent().mul(local.pullFTokenAmount).div(1e18);
 
-        local.maxSpendAmount = vars.amount > local.underlyingAmount
+        if (params.mode == 2) {
+            local.maxSpendAmount = local.underlyingAmount.sub(vars.premium).sub(vars.fee);
+        } else {
+            local.maxSpendAmount = vars.amount > local.underlyingAmount
                 ? local.underlyingAmount.sub(vars.premium).sub(vars.fee) : vars.amount.sub(vars.premium).sub(vars.fee);
+        }
 
         local.debt = CToken(params.debtFToken).borrowBalanceCurrent(vars.initiator);
 

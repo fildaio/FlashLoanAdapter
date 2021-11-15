@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.5.0;
 
-import "./flashloan/FlashLoanReceiverBase.sol";
 import './Governable.sol';
 import './dependency.sol';
 import './FeeManager.sol';
@@ -10,7 +9,7 @@ import './WETH.sol';
 import './compound/CToken.sol';
 import './oracle/ChainlinkAdaptor.sol';
 
-contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
+contract BaseAdapter is Governable, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -18,12 +17,6 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         address _from,
         address _to
     );
-
-    event FlashLoanPoolChanged(
-        address _from,
-        address _to
-    );
-
 
     event OracleChanged(
         address indexed from,
@@ -37,9 +30,8 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
     ChainlinkAdaptor public oracle;
     address public fHUSD;
 
-    constructor(IFlashLoan _flashLoan, address _governance,
+    constructor(address _governance,
             address _swapWrapper, address _weth, address _fETH, address _feeManager, address _oracle, address _fHUSD) public
-        FlashLoanReceiverBase(_flashLoan)
         Governable(_governance) {
         require(_swapWrapper != address(0) && _weth != address(0)
             && _fETH != address(0) && _feeManager != address(0) && _fHUSD != address(0), "FlashLoanAdapter: invalid parameter");
@@ -135,15 +127,6 @@ contract BaseAdapter is FlashLoanReceiverBase, Governable, Ownable {
         feeManager = FeeManager(_feeManager);
 
         emit FeeManagerChanged(from, _feeManager);
-    }
-
-    function setFlashLoanPool(address _flashLoan) external onlyGovernance {
-        require(_flashLoan != address(0), "FlashLoanAdapter: invalid parameter");
-
-        address from = address(FLASHLOAN_POOL);
-        FLASHLOAN_POOL = IFlashLoan(_flashLoan);
-
-        emit FlashLoanPoolChanged(from, _flashLoan);
     }
 
 

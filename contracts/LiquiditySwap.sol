@@ -50,28 +50,28 @@ contract LiquiditySwap is BaseAdapter {
         uint256 toAmount;
     }
 
-    constructor(IFlashLoan _flashLoan, address _governance,
+    constructor(address _governance,
             address _swapWrapper, address _weth, address _fETH, address _feeManager, address _oracle, address _fHUSD, address _comptroller) public
-        BaseAdapter(_flashLoan, _governance, _swapWrapper, _weth, _fETH, _feeManager, _oracle, _fHUSD) {
+        BaseAdapter(_governance, _swapWrapper, _weth, _fETH, _feeManager, _oracle, _fHUSD) {
         require(_comptroller != address(0), "LiquiditySwap: invalid argument");
 
         comptroller = Comptroller(_comptroller);
     }
 
-    function executeOperation(
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        uint256[] calldata premiums,
+    function onFlashLoan(
         address initiator,
-        bytes calldata params
-    ) external returns (bool) {
-        require(msg.sender == address(FLASHLOAN_POOL), "LiquiditySwap: caller is not flashloan contract");
+        address token,
+        uint256 amount,
+        uint256 fee,
+        bytes calldata data
+    ) external returns (bytes32) {
+        require(IERC20(token).balanceOf(address(this)) == amount, "LiquiditySwap: token amount is not enough");
 
-        LiquiditySwapParams memory handlerParams = _decodeParams(params);
+        LiquiditySwapParams memory handlerParams = _decodeParams(data);
         LiquiditySwapLocalParams memory vars;
-        vars.asset = assets[0];
-        vars.amount = amounts[0];
-        vars.premium = premiums[0];
+        vars.asset = token;
+        vars.amount = amount;
+        vars.premium = fee;
         vars.fee = feeManager.getFee(initiator, vars.amount);
 
         (vars.fromAmount, vars.toAmount) = _swapAndDeposit(
@@ -87,8 +87,8 @@ contract LiquiditySwap is BaseAdapter {
             IERC20(vars.asset).safeTransfer(owner(), vars.fee);
         }
 
-        IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), 0);
-        IERC20(vars.asset).safeApprove(address(FLASHLOAN_POOL), vars.amount.add(vars.premium));
+        IERC20(vars.asset).safeApprove(msg.sender, 0);
+        IERC20(vars.asset).safeApprove(msg.sender, vars.amount.add(vars.premium));
 
         emit LiquiditySwaped(
             getUnderlying(handlerParams.assetFromFToken),
@@ -97,7 +97,7 @@ contract LiquiditySwap is BaseAdapter {
             vars.toAmount
         );
 
-        return true;
+        return keccak256("ERC3156FlashBorrower.onFlashLoan");
     }
 
     function _swapAndDeposit(

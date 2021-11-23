@@ -1,9 +1,10 @@
 const FeeManager = artifacts.require("FeeManager");
 
 module.exports = async function (deployer, network, accounts) {
+    const zeroAddr = "0x0000000000000000000000000000000000000000";
     await deployer.deploy(FeeManager,
         '0x', // _governance
-        '0x73CB0A55Be009B30e63aD5830c85813414c66367' // _daoPool
+        '0x' // _daoPool
         );
 
     console.log("***********************************************");

@@ -104,6 +104,17 @@ module.exports = {
       networkCheckTimeout: 100000000,
       websockets: true
     },
+    matic: {
+          provider: () => new HDWalletProvider(mnemonic, `wss://matic-mainnet-full-ws.bwarelabs.com`),
+          network_id: "137",
+          chain_id: "137",
+          timeoutBlocks: 300,
+          //confirmations: 2,
+          gasPrice: 50000000000,
+          skipDryRun: false,
+          networkCheckTimeout: 600000000,
+          websockets: true
+      },
   },
 
   // Set default mocha options here, use special reporters etc.

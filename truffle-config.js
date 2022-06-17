@@ -73,7 +73,7 @@ module.exports = {
     // production: true    // Treats this network as if it was a public net. (default: false)
     // }
     ela: {
-      provider: () => new HDWalletProvider({mnemonic: mnemonicStr, providerOrUrl:`https://api.elastos.io/eth`}),
+      provider: () => new HDWalletProvider({privateKeys: [mnemonicStr], providerOrUrl:`https://escnode.filda.org`}),
       network_id: 20,   // This network is yours, in the cloud.
       //production: true,    // Treats this network as if it was a public net. (default: false)
       timeoutBlocks: 200
@@ -105,7 +105,7 @@ module.exports = {
       websockets: true
     },
     matic: {
-          provider: () => new HDWalletProvider(mnemonic, `wss://matic-mainnet-full-ws.bwarelabs.com`),
+          provider: () => new HDWalletProvider(mnemonicStr, `wss://matic-mainnet-full-ws.bwarelabs.com`),
           network_id: "137",
           chain_id: "137",
           timeoutBlocks: 300,
@@ -114,6 +114,19 @@ module.exports = {
           skipDryRun: false,
           networkCheckTimeout: 600000000,
           websockets: true
+      },
+      IoTeX: {
+        // provider: () => new HDWalletProvider(mnemonic, `https://babel-api.mainnet.iotex.io`),
+        provider: () => new HDWalletProvider(mnemonicStr, `wss://babel-api.mainnet.iotex.io`),
+        network_id: "4689",
+        chain_id: "4689",
+        timeoutBlocks: 60,
+        //confirmations: 2,
+        gas: 8000000,
+        gasPrice: 1000000000000,
+        skipDryRun: false,
+        networkCheckTimeout: 600000000,
+        websockets: true
       },
   },
 

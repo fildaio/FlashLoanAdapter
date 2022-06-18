@@ -22,7 +22,7 @@ const HDWalletProvider = require('@truffle/hdwallet-provider');
 // const infuraKey = "fj4jll3k.....";
 //
 const fs = require('fs');
-const mnemonicStr = fs.readFileSync(".secret").toString().trim();
+const mnemonicStr = fs.readFileSync(".secret.kcc").toString().trim();
 
 module.exports = {
   /**
@@ -115,6 +115,18 @@ module.exports = {
           networkCheckTimeout: 600000000,
           websockets: true
       },
+      kcc: {
+        provider: () => new HDWalletProvider(mnemonicStr, `wss://rpc-ws-mainnet.kcc.network`),
+        // provider: () => new HDWalletProvider(mnemonicStr, `https://rpc-mainnet.kcc.network`),
+        network_id: "321",   // This network is yours, in the cloud.
+        timeoutBlocks: 200,
+        gasPrice: 2100000000,
+        // gas: 55000000,
+        skipDryRun: true,
+        pollingInterval: 16000,
+        networkCheckTimeout: 100000000,
+        websockets: true
+      },   
   },
 
   // Set default mocha options here, use special reporters etc.

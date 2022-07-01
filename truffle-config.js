@@ -104,6 +104,16 @@ module.exports = {
       networkCheckTimeout: 100000000,
       websockets: true
     },
+    kcc: {
+      provider: () => new HDWalletProvider({mnemonic: mnemonicStr, providerOrUrl:'https://rpc-mainnet.kcc.network'}),
+      network_id: 321,   // This network is yours, in the cloud.
+      //production: true,    // Treats this network as if it was a public net. (default: false)
+      timeoutBlocks: 200,
+      confirmations: 2,
+      gasPrice: 2000000000,
+      skipDryRun: true,
+      websockets: false
+    },
   },
 
   // Set default mocha options here, use special reporters etc.
